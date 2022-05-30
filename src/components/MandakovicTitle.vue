@@ -14,7 +14,7 @@ export default {
 <style scoped lang="scss">
 @media only screen and (max-width: 915px) {
   #main-title {
-    font-size: 40px !important;
+    font-size: 30px !important;
   }
 }
 #main-title {
