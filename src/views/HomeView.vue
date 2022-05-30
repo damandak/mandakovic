@@ -1,8 +1,9 @@
 <template>
-  <div class="home">
-    <img alt="Vue logo" src="../assets/logo.png" />
-    <HelloWorld msg="Welcome to Your Vue.js App" />
-  </div>
+  <transition>
+    <div class="home">
+      <HelloWorld msg="Welcome to Your Vue.js App" />
+    </div>
+  </transition>
 </template>
 
 <script>
@@ -16,3 +17,16 @@ export default {
   },
 };
 </script>
+
+<style>
+.home {
+  background: url("~@/assets/vis.jpg") no-repeat center center fixed;
+  -webkit-background-size: cover;
+  -moz-background-size: cover;
+  -o-background-size: cover;
+  background-size: cover;
+  height: 100%;
+  position: absolute;
+  width: 100vw;
+}
+</style>
