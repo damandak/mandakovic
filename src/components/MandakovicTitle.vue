@@ -1,27 +1,26 @@
 <template>
   <div class="hello">
-    <h1>MANDAKOVIC</h1>
+    <h1 id="main-title">MANDAKOVIC</h1>
   </div>
 </template>
 
 <script>
 export default {
-  name: "HelloWorld",
-  props: {
-    msg: String,
-  },
+  name: "MandakovicTitle",
 };
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
 @media only screen and (max-width: 915px) {
-  h1 {
+  #main-title {
     font-size: 40px !important;
   }
 }
-h1 {
+#main-title {
   font-size: 100px;
   margin-top: 30vh;
+  text-decoration: none;
+  color: white;
 }
 </style>
