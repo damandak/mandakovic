@@ -1,0 +1,2 @@
+Aquí va sorteo.json, el archivo que descargas desde el panel del organizador
+(www.mandakovic.cl/amigosecreto/#/admin). Sin él, el sitio muestra la pantalla de bienvenida.
