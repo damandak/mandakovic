@@ -1,0 +1,6 @@
+/amigosecreto/data/*
+  Cache-Control: no-store
+/amigosecreto/*
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
