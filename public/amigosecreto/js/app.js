@@ -3,7 +3,7 @@
   'use strict';
   const { esc, $, $$, icons } = AS;
   const app = document.getElementById('app');
-  const S = { data: null, demo: false, dealt: false, me: null, secret: null, raf: 0, returnId: null };
+  const S = { data: null, locked: null, lockErr: false, demo: false, dealt: false, me: null, secret: null, raf: 0, returnId: null };
   const ROT = [-2.4, 1.6, -1, 2.2, -1.8, 0.9, 2.6, -0.6];
 
   /* ───────── datos ───────── */
@@ -21,11 +21,23 @@
     j.people.forEach((p) => { p.src = p.photo ? toBlobUrl(p.photo) : AS.avatar(p.name); });
     document.title = j.event.title || 'Amigo Secreto';
   }
+  async function unlock(key) {
+    const k = AS.normCode(key);
+    const inner = k.length === 8 && S.locked ? await AS.open(k, S.locked.fam) : null;
+    if (!inner || !Array.isArray(inner.people)) return false;
+    setData(inner); AS.store.set('as.fam', k); return true;
+  }
   async function loadData() {
+    S.data = null; S.locked = null;
     try {
       const r = await fetch('data/sorteo.json?v=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) throw 0;
       const j = await r.json();
+      if (j && j.v === 2 && j.fam) { // nombres y fotos cifrados con el código de la familia
+        S.locked = j; AS.applyTheme(j.theme);
+        const saved = AS.store.get('as.fam'); if (saved) await unlock(saved);
+        return;
+      }
       if (!j || !Array.isArray(j.people) || j.people.length < 3) throw 0;
       setData(j);
     } catch (e) { S.data = null; }
@@ -56,6 +68,18 @@
   function route() {
     const h = location.hash || '#/';
     if (h.startsWith('#/admin')) { transition(() => AS.admin.mount(app, { demo: S.demo })); return; }
+    if (S.locked && !S.data) {
+      const q = new URLSearchParams(h.split('?')[1] || ''), k = q.get('k');
+      if (k) {
+        unlock(k).then((ok) => {
+          S.lockErr = !ok; q.delete('k'); const qs = q.toString();
+          history.replaceState(null, '', h.split('?')[0] + (qs ? '?' + qs : '')); route();
+        });
+        return;
+      }
+      transition(() => { AS.applyTheme(S.locked.theme); renderLock(); });
+      return;
+    }
     transition(() => {
       AS.applyTheme(S.data ? S.data.event.theme : 'pino');
       const m = h.match(/^#\/yo\/([^?]+)(?:\?(.*))?$/);
@@ -136,7 +160,62 @@
     S.returnId = null;
   }
 
-  /* ───────── pantalla: código ───────── */
+  /* ───────── código segmentado ───────── */
+  const otpMarkup = (n) => {
+    const cells = (c) => Array.from({ length: c }, () => '<div class="cell"></div>').join('');
+    return `<div class="otp" data-otp>${cells(n / 2)}<span class="dash"></span>${cells(n / 2)}
+      <input inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="${n + 3}" aria-label="Código de ${n} caracteres" enterkeyhint="go"></div>`;
+  };
+  function bindOtp(scope, n, { onInput, onComplete }) {
+    const inp = $('.otp input', scope), cells = $$('.otp .cell', scope), otp = $('.otp', scope);
+    const paint = () => {
+      const v = AS.normCode(inp.value).slice(0, n), act = document.activeElement === inp;
+      cells.forEach((c, i) => { c.textContent = v[i] || ''; c.classList.toggle('full', !!v[i]); c.classList.toggle('on', act && i === Math.min(v.length, n - 1)); });
+      return v;
+    };
+    inp.addEventListener('input', () => { inp.value = AS.normCode(inp.value).slice(0, n); onInput && onInput(); if (paint().length === n) onComplete(); });
+    inp.addEventListener('focus', paint); inp.addEventListener('blur', paint);
+    otp.addEventListener('click', () => inp.focus());
+    return {
+      inp, paint, value: () => AS.normCode(inp.value),
+      set(v) { inp.value = v; paint(); },
+      bad() { otp.classList.add('bad'); AS.vibrate([40, 40, 40]); setTimeout(() => { otp.classList.remove('bad'); inp.value = ''; paint(); inp.focus(); }, 520); },
+    };
+  }
+  const withSpinner = (btn, label, on) => { btn.disabled = on; if (on) btn.innerHTML = '<span class="spin"></span>Comprobando'; else btn.textContent = label; };
+
+  /* ───────── pantalla: acceso de la familia ───────── */
+  function renderLock() {
+    const hadErr = S.lockErr; S.lockErr = false;
+    app.innerHTML = `<div class="screen">${topbar()}
+      <main class="who-step" style="grid-template-columns:minmax(0,460px);justify-content:center">
+        <form class="code-card" autocomplete="off" novalidate>
+          <h2 tabindex="-1">Solo para la familia</h2>
+          <p class="sub">Escribe el código de la familia que te llegó por mensaje. Si te enviaron un link, ábrelo directamente y entrarás sin escribir nada.</p>
+          ${otpMarkup(8)}
+          <p class="err" role="alert">${hadErr ? 'Ese código no abre este amigo secreto. Revisa el mensaje que te enviaron.' : ''}</p>
+          <div class="actions"><button class="btn primary" type="submit">Entrar</button></div>
+        </form></main></div>`;
+    const form = $('.code-card'), err = $('.err'), btn = $('button[type=submit]');
+    let busy = false;
+    const otp = bindOtp(form, 8, { onInput: () => (err.textContent = ''), onComplete: () => submit() });
+    async function submit(e) {
+      if (e) e.preventDefault();
+      if (busy) return;
+      const v = otp.value();
+      if (v.length < 8) { err.textContent = 'El código de la familia tiene 8 caracteres. Te faltan ' + (8 - v.length) + '.'; return; }
+      busy = true; withSpinner(btn, 'Entrar', true);
+      const [ok] = await Promise.all([unlock(v), AS.wait(350)]);
+      busy = false; withSpinner(btn, 'Entrar', false);
+      if (ok) { route(); return; }
+      err.textContent = 'Ese código no abre este amigo secreto. Revisa el mensaje que te enviaron.'; otp.bad();
+    }
+    form.addEventListener('submit', submit);
+    if (hadErr) err.textContent = 'Ese código no abre este amigo secreto. Revisa el mensaje que te enviaron.';
+    setTimeout(() => otp.inp.focus(), 450);
+  }
+
+  /* ───────── pantalla: código personal ───────── */
   function renderWho(p, prefill) {
     app.innerHTML = `<div class="screen">${topbar(true)}
       <main class="who-step">
@@ -144,43 +223,31 @@
         <form class="code-card" autocomplete="off" novalidate>
           <h2 tabindex="-1">Hola, ${esc(p.name)}</h2>
           <p class="sub">Escribe el código que te llegó por mensaje y abre tu regalo.</p>
-          <div class="otp" data-otp>
-            ${[0, 1, 2].map(() => '<div class="cell"></div>').join('')}<span class="dash"></span>${[0, 1, 2].map(() => '<div class="cell"></div>').join('')}
-            <input inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="9" aria-label="Código de 6 caracteres" enterkeyhint="go">
-          </div>
+          ${otpMarkup(6)}
           <p class="err" role="alert"></p>
           <div class="actions"><button class="btn primary" type="submit">Abrir mi regalo</button><button type="button" class="linkbtn" data-a="home">No soy ${esc(p.name)}</button></div>
           ${S.data.event.organizer ? `<p class="sub" style="margin:1.2rem 0 0;font-size:.93rem">¿No te llegó el código? Pídeselo a ${esc(S.data.event.organizer)}.</p>` : ''}
           ${S.demo ? '<p class="demo-note">Estás en la demo. El código de todos es <b>AMIGOS</b>.</p>' : ''}
         </form>
       </main></div>`;
-    const form = $('.code-card'), inp = $('.otp input'), cells = $$('.otp .cell'), err = $('.err'), otp = $('.otp'), btn = $('button[type=submit]');
+    const form = $('.code-card'), err = $('.err'), btn = $('button[type=submit]');
     let busy = false;
-    const paint = () => { const v = AS.normCode(inp.value).slice(0, 6); const act = document.activeElement === inp; cells.forEach((c, i) => { c.textContent = v[i] || ''; c.classList.toggle('full', !!v[i]); c.classList.toggle('on', act && i === Math.min(v.length, 5)); }); return v; };
+    const otp = bindOtp(form, 6, { onInput: () => (err.textContent = ''), onComplete: () => submit() });
     async function submit(e) {
       if (e) e.preventDefault();
       if (busy) return;
-      const v = AS.normCode(inp.value);
+      const v = otp.value();
       if (v.length < 6) { err.textContent = 'El código tiene 6 caracteres. Te faltan ' + (6 - v.length) + '.'; return; }
-      busy = true; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Comprobando';
+      busy = true; withSpinner(btn, 'Abrir mi regalo', true);
       const [payload] = await Promise.all([AS.open(v, p), AS.wait(350)]);
-      busy = false; btn.disabled = false; btn.textContent = 'Abrir mi regalo';
-      if (!payload || payload.from !== p.id) {
-        err.textContent = 'Ese código no es el de ' + p.name + '. Revisa el mensaje que te enviaron.';
-        otp.classList.add('bad'); AS.vibrate([40, 40, 40]);
-        setTimeout(() => { otp.classList.remove('bad'); inp.value = ''; paint(); inp.focus(); }, 520);
-        return;
-      }
+      busy = false; withSpinner(btn, 'Abrir mi regalo', false);
+      if (!payload || payload.from !== p.id) { err.textContent = 'Ese código no es el de ' + p.name + '. Revisa el mensaje que te enviaron.'; otp.bad(); return; }
       S.me = p; S.secret = payload;
       transition(renderGift);
     }
-    inp.addEventListener('input', () => { inp.value = AS.normCode(inp.value).slice(0, 6); err.textContent = ''; if (paint().length === 6) submit(); });
-    inp.addEventListener('focus', paint); inp.addEventListener('blur', paint);
-    otp.addEventListener('click', () => inp.focus());
     form.addEventListener('submit', submit);
-    paint();
-    if (prefill) { inp.value = AS.normCode(prefill).slice(0, 6); paint(); setTimeout(submit, 500); }
-    else setTimeout(() => inp.focus(), 450);
+    if (prefill) { otp.set(AS.normCode(prefill).slice(0, 6)); setTimeout(submit, 500); }
+    else setTimeout(() => otp.inp.focus(), 450);
   }
 
   /* ───────── pantalla: regalo (mantén presionado) ───────── */

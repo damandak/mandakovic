@@ -14,6 +14,7 @@
     const d = AS.store.get(KEY) || {};
     S = Object.assign(defaults(), d); S.event = Object.assign(defaults().event, d.event || {}); S.people = d.people || [];
     result = AS.store.get(RKEY);
+    if (!S.fam) { S.fam = AS.newCode(8); save(); }
   }
   function save() {
     clearTimeout(saveT);
@@ -31,8 +32,8 @@
     return s;
   };
   const baseUrl = () => { let s = (site() || '').trim(); if (s && !/^https?:\/\//.test(s)) s = 'https://' + s; return s ? s.replace(/#.*$/, '').replace(/\/?$/, '/') : ''; };
-  const link = (p) => `${baseUrl()}#/yo/${encodeURIComponent(p.id)}?c=${p.code}`;
-  const message = (p) => `🎁 ¡Hola ${p.name}! Ya está listo nuestro amigo secreto.\nDescubre a quién te toca entrando aquí: ${link(p)}\nTu código es ${AS.fmtCode(p.code)}.\nShhh, es un secreto 🤫`;
+  const link = (p) => `${baseUrl()}#/yo/${encodeURIComponent(p.id)}?c=${p.code}&k=${S.fam}`;
+  const message = (p) => `🎁 ¡Hola ${p.name}! Ya está listo nuestro amigo secreto.\nDescubre a quién te toca entrando aquí: ${link(p)}\nSi el link no abre, entra a ${baseUrl()} con el código de la familia ${AS.fmtCode(S.fam)} y tu código ${AS.fmtCode(p.code)}.\nShhh, es un secreto 🤫`;
   const waUrl = (p) => { let d = (p.phone || '').replace(/\D/g, ''); if (d.length === 9 && d[0] === '9') d = '56' + d; return `https://wa.me/${d}?text=${encodeURIComponent(message(p))}`; };
 
   /* ───────── cascarón ───────── */
@@ -168,11 +169,12 @@
       html += `<section class="panel">
         <div class="done-head">${icons.check}<div><h2>El sorteo está listo</h2><p class="sub" style="margin:0">Verificado: nadie se regala a sí mismo y cada persona da y recibe un solo regalo.</p></div></div>
         <ol class="how">
-          <li><b>Descarga el archivo del sorteo</b><span>Contiene la familia, las fotos y los resultados cifrados.</span><div class="mt"><button class="btn primary" data-a="dl">${icons.down}Descargar sorteo.json</button></div></li>
+          <li><b>Descarga el archivo del sorteo</b><span>Va todo cifrado: nombres, fotos y resultados. Aunque el repositorio sea público, nadie puede verlos sin el código de la familia.</span><div class="mt"><button class="btn primary" data-a="dl">${icons.down}Descargar sorteo.json</button></div></li>
           <li><b>Publícalo en tu sitio</b><span>Guárdalo como <code>public/amigosecreto/data/sorteo.json</code> en tu repositorio, reemplazando el que hay, y haz commit y push. Netlify lo publica solo en un minuto.</span></li>
           <li><b>Avisa a cada persona</b><span>Cada una recibe un link personal con su código. Abajo puedes enviarlos por WhatsApp con un toque.</span></li>
         </ol></section>
         <section class="panel"><h2>Mensajes para la familia</h2>
+          <p class="sub" style="margin-bottom:1rem">Código de la familia <span class="cd" style="font-family:var(--display);letter-spacing:.1em;color:var(--gold);margin-left:.5rem">${AS.fmtCode(S.fam)}</span><br><small style="color:var(--dim)">Viaja dentro de cada link. Quien abra el sitio sin link lo necesita para entrar.</small></p>
           <label class="f">Dirección de tu sitio <small>Con la dirección completa del sitio publicado.</small><input class="in" id="site" value="${esc(site())}" placeholder="https://www.mandakovic.cl/amigosecreto/"></label>
           <div class="bar" style="margin-top:1rem"><span class="l">${b ? '' : 'Escribe la dirección para armar los links.'}</span><div style="display:flex;gap:.6rem;flex-wrap:wrap"><button class="btn ghost sm" data-a="copyall">${icons.copy}Copiar todos</button><button class="btn ghost sm" data-a="codes">${icons.down}Descargar códigos</button></div></div>
           <div class="share">${ppl.map((p) => `<div class="srow" data-id="${esc(p.id)}"><img src="${avatarFor(p)}" alt=""><div><span class="nmx">${esc(p.name)}</span><span class="cd">${AS.fmtCode(p.code)}</span></div>
@@ -191,6 +193,11 @@
     const by = Object.fromEntries(S.people.map((p) => [p.id, p])), tos = new Set();
     for (const rec of data.people) { const pl = await AS.open(by[rec.id].code, rec); if (!pl || pl.from !== rec.id || pl.to === rec.id || !by[pl.to]) return false; if (by[rec.id].group && by[rec.id].group === by[pl.to].group) return false; tos.add(pl.to); }
     return tos.size === data.people.length;
+  }
+  async function exportFile() { // el archivo público va completamente cifrado: nombres, fotos y resultados
+    if (S.dirty) await refresh();
+    const d = result.data;
+    return JSON.stringify({ v: 2, theme: d.event.theme, createdAt: d.createdAt, fam: await AS.seal(S.fam, d) });
   }
   const persistResult = () => { if (!AS.store.set(RKEY, result)) AS.toast('Descarga el archivo ahora: el navegador no pudo guardarlo para después.'); };
   async function doDraw() {
@@ -251,10 +258,10 @@
     else if (a === 'group') { const p = pid(b); if (p) { p.group = +b.dataset.g; touch(); $$('[data-a=group]', b.parentNode).forEach((x) => x.setAttribute('aria-checked', x === b)); } }
     else if (a === 'draw') doDraw();
     else if (a === 'redraw') { if (confirm('Se hará un sorteo nuevo y tendrás que volver a subir el archivo. Si alguien ya abrió su regalo, verá otro resultado. ¿Continuar?')) { result = null; AS.store.del(RKEY); renderStepper(); stageDraw(); } }
-    else if (a === 'dl') { if (S.dirty) await refresh(); AS.download('sorteo.json', JSON.stringify(result.data), 'application/json'); AS.toast('Descargado. Ahora ponlo en la carpeta data.'); }
+    else if (a === 'dl') { AS.download('sorteo.json', await exportFile(), 'application/json'); AS.toast('Descargado. Ahora guárdalo en la carpeta data y publícalo.'); }
     else if (a === 'copy') { const p = pid(b); if (p && baseUrl()) { await AS.copy(message(p)); AS.toast('Mensaje de ' + p.name + ' copiado.'); } else AS.toast('Escribe primero la dirección de tu sitio.'); }
     else if (a === 'copyall') { if (!baseUrl()) return AS.toast('Escribe primero la dirección de tu sitio.'); await AS.copy(S.people.map((p) => `— ${p.name} —\n${message(p)}`).join('\n\n')); AS.toast('Copiados todos los mensajes.'); }
-    else if (a === 'codes') AS.download('codigos-PRIVADO.txt', 'Códigos del amigo secreto. No lo compartas.\n\n' + S.people.map((p) => `${p.name}\t${AS.fmtCode(p.code)}\t${baseUrl() ? link(p) : ''}`).join('\n'), 'text/plain');
+    else if (a === 'codes') AS.download('codigos-PRIVADO.txt', 'Códigos del amigo secreto. No lo compartas.\n\nCódigo de la familia\t' + AS.fmtCode(S.fam) + '\n\n' + S.people.map((p) => `${p.name}\t${AS.fmtCode(p.code)}\t${baseUrl() ? link(p) : ''}`).join('\n'), 'text/plain');
   });
   // arrastrar y soltar fotos
   ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (root && $('.adm', root)) e.preventDefault(); }));

@@ -14,8 +14,8 @@
   AS.rand = (n) => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
   AS.shuffle = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = AS.rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   AS.normCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  AS.fmtCode = (c) => (c.length > 3 ? c.slice(0, 3) + '-' + c.slice(3) : c);
-  AS.newCode = () => { let s = ''; for (let i = 0; i < 6; i++) s += AS.ALPHABET[AS.rand(AS.ALPHABET.length)]; return s; };
+  AS.fmtCode = (c) => { const h = c.length === 8 ? 4 : 3; return c.length > h ? c.slice(0, h) + '-' + c.slice(h) : c; };
+  AS.newCode = (n) => { let s = ''; for (let i = 0; i < (n || 6); i++) s += AS.ALPHABET[AS.rand(AS.ALPHABET.length)]; return s; };
   AS.slug = (n) => String(n).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'persona';
   AS.uid = (n) => AS.slug(n) + '-' + Math.random().toString(36).slice(2, 5);
   AS.store = {
